@@ -35,11 +35,15 @@
 
 (core/deftask cryogen []
   (let [tmp (core/temp-dir!)
-        p   (create-pod)]
+        p   (create-pod)
+        prev (atom nil)]
     (core/with-pre-wrap fileset
       (let [{:keys [post-root page-root] :as config} (read-config)
-            posts (find-by-root fileset post-root)
-            pages (find-by-root fileset page-root)]
+            changes (core/fileset-diff @prev fileset)
+            posts (find-by-root changes post-root)
+            pages (find-by-root changes page-root)]
+        (reset! prev fileset)
+        (util/info "Compiling cryogen site... %d changed files\n" (+ (count posts) (count pages)))
         (pod/with-call-in @p
           (deraen.boot-cryogen.impl/compile-cryogen
             ~(.getPath tmp)
@@ -50,13 +54,18 @@
 
 (core/deftask sitemap []
   (let [tmp (core/temp-dir!)
-        p   (create-pod)]
+        p   (create-pod)
+        prev (atom nil)]
     (core/with-pre-wrap fileset
       (let [config (read-config)
+            html-changes (->> fileset (core/fileset-diff @prev) core/input-files (core/by-ext [".html"]))
             html-files (->> fileset core/input-files (core/by-ext [".html"]))]
-        (pod/with-call-in @p
-          (deraen.boot-cryogen.impl/generate-sitemap
-            ~(.getPath tmp)
-            ~config
-            ~(map tmpfile->path html-files))))
+        (reset! prev fileset)
+        (when (seq html-changes)
+          (util/info "Generating sitemap.xml...\n")
+          (pod/with-call-in @p
+            (deraen.boot-cryogen.impl/generate-sitemap
+              ~(.getPath tmp)
+              ~config
+              ~(map tmpfile->path html-files)))))
       (-> fileset (core/add-resource tmp) core/commit!))))

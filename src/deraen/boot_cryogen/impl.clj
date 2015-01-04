@@ -17,24 +17,8 @@
 
 (cache-off!)
 
-(defn read-posts
-  "Returns a sequence of maps representing the data from markdown files of posts.
-   Sorts the sequence by post date."
-  [post-paths config]
-  (->> post-paths
-       (map io/file)
-       (map #(cryogen/parse-page true % config))
-       (sort-by :date)
-       reverse))
-
-(defn read-pages
-  "Returns a sequence of maps representing the data from markdown files of pages.
-   Sorts the sequence by post date."
-  [page-paths config]
-  (->> page-paths
-       (map io/file)
-       (map #(cryogen/parse-page false % config))
-       (sort-by :page-index)))
+(def state (atom {:posts {}
+                  :pages {}}))
 
 (defn compile-pages
   "Compiles all the pages into html and spits them out into the public folder"
@@ -114,8 +98,18 @@
    {:keys [recent-posts blog-prefix rss-name]
     :as config}
    post-paths page-paths]
-  (let [posts (cryogen/add-prev-next (read-posts post-paths config))
-        pages (cryogen/add-prev-next (read-pages page-paths config))
+  (let [read-changes (fn [current parse-fn paths]
+                       (reduce (fn [acc path]
+                                 (assoc acc path (parse-fn (io/file path) config)))
+                               current paths))
+
+        _     (swap! state update-in [:posts] read-changes (partial cryogen/parse-page true) post-paths)
+        posts (->> @state :posts vals (sort-by :date) reverse)
+        _     (swap! state update-in [:pages] read-changes (partial cryogen/parse-page false) page-paths)
+        pages (->> @state :pages vals (sort-by :page-index))
+
+
+
         [navbar-pages sidebar-pages] (cryogen/group-pages pages)
         posts-by-tag (cryogen/group-by-tags posts)
         posts (cryogen/tag-posts posts config)
